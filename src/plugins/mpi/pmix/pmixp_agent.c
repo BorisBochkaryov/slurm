@@ -57,6 +57,7 @@ static eio_handle_t *_io_handle = NULL;
 
 static pthread_t _agent_tid = 0;
 static pthread_t _timer_tid = 0;
+static pthread_t _abort_tid = 0;
 
 struct timer_data_t {
 	int work_in, work_out;
@@ -260,6 +261,57 @@ static void *_agent_thread(void *unused)
 	return NULL;
 }
 
+/*
+ * thread for codes from abort
+ */
+static void *_pmix_abort_thread(void *unused)
+{
+    PMIXP_DEBUG("Start abort thread");
+    struct sockaddr_in abort_server;
+    int abort_server_socket;
+
+    if ((abort_server_socket = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+        PMIXP_ERROR("Error start from abort thread");
+        return -1;
+    }
+
+    abort_server.sin_family = AF_INET;
+    abort_server.sin_addr.s_addr = htonl(INADDR_ANY);
+    abort_server.sin_port = htons((u_short) 4112);
+
+    if (bind(abort_server_socket, (struct sockaddr *) &server, sizeof(server)) == -1) {
+        PMIXP_ERROR("Error bind from abort thread");
+        return -1;
+    }
+
+    PMIXP_DEBUG("Server addr for abort codes: %s", inet_ntoa(abort_server.sin_addr));
+
+    while (1) {
+        int abort_client_sock, abort_client_len;
+        struct sockaddr_in abort_client;
+
+        if ((abort_client_sock = accept(sock, (struct sockaddr *) &abort_client, &abort_client_len)) == -1) {
+            PMIXP_ERROR("Error accept from abort thread");
+            return -1;
+        }
+
+        PMIXP_DEBUG("New abort client: %s", inet_ntoa(abort_client.sin_addr));
+
+        int size;
+        char abort_code[255];
+        memset(abort_code, 0, sizeof(abort_code));
+
+        while ((size = recv(abort_client_sock, abort_code, sizeof(abort_code), 0)) != 0) {
+            PMIXP_DEBUG("New abort code from abort_client: %s", abort_code);
+        }
+
+        close(abort_client_sock);
+    }
+
+    rwfail:
+    close(abort_server_socket);
+}
+
 static void *_pmix_timer_thread(void *unused)
 {
 	struct pollfd pfds[1];
@@ -330,6 +382,7 @@ int pmixp_agent_start(void)
 		    (unsigned long) _agent_tid);
 
 	slurm_thread_create(&_timer_tid, _pmix_timer_thread, NULL);
+	slurm_thread_create(&_abort_tid, _pmix_abort_thread, NULL);
 
 	PMIXP_DEBUG("timer thread started: tid = %lu",
 		    (unsigned long) _timer_tid);
@@ -362,6 +415,8 @@ int pmixp_agent_stop(void)
 		/* close timer fds */
 		_shutdown_timeout_fds();
 	}
+
+	// TODO: close pthread_abort
 
 	slurm_mutex_unlock(&agent_mutex);
 	return rc;

@@ -240,5 +240,7 @@ extern mpi_plugin_client_state_t *p_mpi_hook_client_prelaunch(
 
 extern int p_mpi_hook_client_fini(void)
 {
+    // TODO: Getting the exit code from socket_abort
+
 	return SLURM_SUCCESS;
 }
