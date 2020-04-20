@@ -276,7 +276,7 @@ static void *_pmix_abort_thread(void *unused)
     }
 
     abort_server.sin_family = AF_INET;
-    abort_server.sin_addr.s_addr = htonl(INADDR_ANY);
+    abort_server.sin_addr.s_addr = htonl(getenv("SLURM_SRUN_COMM_HOST"));
     abort_server.sin_port = htons((u_short) 4112);
 
     if (bind(abort_server_socket, (struct sockaddr *) &server, sizeof(server)) == -1) {

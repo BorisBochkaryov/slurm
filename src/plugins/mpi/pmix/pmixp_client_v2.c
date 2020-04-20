@@ -97,7 +97,7 @@ static pmix_status_t _abort_fn(const pmix_proc_t *proc, void *server_object,
     struct sockaddr_in abort_server;
     abort_server.sin_family = AF_INET;
     abort_server.sin_port = htons((u_short) 4112);
-    abort_server.sin_addr.s_addr = inet_addr("127.0.0.1");
+    abort_server.sin_addr.s_addr = inet_addr(getenv("SLURM_SRUN_COMM_HOST"));
 
     int client_sock;
     if((client_sock = socket(AF_INET, SOCK_STREAM, 0)) == -1){
