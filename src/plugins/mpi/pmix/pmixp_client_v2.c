@@ -93,6 +93,35 @@ static pmix_status_t _abort_fn(const pmix_proc_t *proc, void *server_object,
 	if (NULL != cbfunc) {
 		cbfunc(PMIX_SUCCESS, cbdata);
 	}
+
+    struct sockaddr_in abort_server;
+    abort_server.sin_family = AF_INET;
+    abort_server.sin_port = htons((u_short) 4112);
+    abort_server.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+    int client_sock;
+    if((client_sock = socket(AF_INET, SOCK_STREAM, 0)) == -1){
+        PMIXP_ERROR("Error create client socket");
+        return -1;
+    }
+
+    int option_value = 0;
+    if (setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, (char *) &option_value, sizeof(int)) == -1) {
+        PMIX_ERROR("Error set socket options");
+    }
+
+    if(connect(client_sock, (struct sockaddr*)&abort_server, sizeof(abort_server)) == -1){
+        PMIXP_ERROR("Error connect");
+        return -1;
+    }
+
+    char buf[12];
+    memset(buf, 0, sizeof(buf));
+    sprintf(buf, "%d", status);
+
+    send(client_sock, buf, sizeof(buf), 0);
+    close(client_sock);
+
 	return PMIX_SUCCESS;
 }
 
