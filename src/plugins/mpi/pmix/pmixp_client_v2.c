@@ -88,41 +88,37 @@ static pmix_status_t _abort_fn(const pmix_proc_t *proc, void *server_object,
 {
 	/* Just kill this stepid for now. Think what we can do for FT here? */
 	PMIXP_DEBUG("called: status = %d, msg = %s", status, msg);
-	slurm_kill_job_step(pmixp_info_jobid(), pmixp_info_stepid(), SIGKILL);
 
-	if (NULL != cbfunc) {
-		cbfunc(PMIX_SUCCESS, cbdata);
+	struct sockaddr_in abort_server;
+	abort_server.sin_family = AF_INET;
+	abort_server.sin_port = htons((u_short) 4112);
+	abort_server.sin_addr.s_addr = inet_addr("192.168.0.37");
+
+	int client_sock;
+	if((client_sock = socket(AF_INET, SOCK_STREAM, 0)) == -1){
+		PMIXP_ERROR("Error create client socket");
+		return -1;
 	}
 
-    struct sockaddr_in abort_server;
-    abort_server.sin_family = AF_INET;
-    abort_server.sin_port = htons((u_short) 4112);
-    abort_server.sin_addr.s_addr = inet_addr(getenv("SLURM_SRUN_COMM_HOST"));
+	PMIXP_DEBUG("Server addr for abort codes from _abort_fn: %s", inet_ntoa(abort_server.sin_addr));
+	PMIXP_DEBUG("Server port for abort codes from _abort_fn: %d", abort_server.sin_port);
 
-    int client_sock;
-    if((client_sock = socket(AF_INET, SOCK_STREAM, 0)) == -1){
-        PMIXP_ERROR("Error create client socket");
-        return -1;
-    }
+	if(connect(client_sock, (struct sockaddr*)&abort_server, sizeof(abort_server)) == -1){
+		PMIXP_ERROR("Error connect: %s", strerror(errno));
+		return -1;
+	}
 
-    int option_value = 0;
-    if (setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, (char *) &option_value, sizeof(int)) == -1) {
-        PMIX_ERROR("Error set socket options");
-    }
+	char buf[12];
+	memset(buf, 0, sizeof(buf));
+	sprintf(buf, "%d", status);
 
-    if(connect(client_sock, (struct sockaddr*)&abort_server, sizeof(abort_server)) == -1){
-        PMIXP_ERROR("Error connect");
-        return -1;
-    }
+	send(client_sock, buf, sizeof(buf), 0);
+	close(client_sock);
 
-    char buf[12];
-    memset(buf, 0, sizeof(buf));
-    sprintf(buf, "%d", status);
+	// TODO: Need to kill?
+	slurm_kill_job_step(pmixp_info_jobid(), pmixp_info_stepid(), SIGKILL);
 
-    send(client_sock, buf, sizeof(buf), 0);
-    close(client_sock);
-
-	return PMIX_SUCCESS;
+	return status;
 }
 
 static pmix_status_t _fencenb_fn(const pmix_proc_t procs_v2[], size_t nprocs,

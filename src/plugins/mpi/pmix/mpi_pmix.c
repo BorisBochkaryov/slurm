@@ -138,11 +138,46 @@ extern int init(void)
 
 extern int fini(void)
 {
+	// recv abort code
+	struct sockaddr_in abort_server;
+	abort_server.sin_family = AF_INET;
+    abort_server.sin_port = htons((u_short) 4112);
+    abort_server.sin_addr.s_addr = inet_addr("192.168.0.37");
+
+    int client_sock;
+    if((client_sock = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+        PMIXP_ERROR("Error create fini client socket");
+        return -1;
+    }
+
+    if(connect(client_sock, (struct sockaddr*)&abort_server, sizeof(abort_server)) == -1) {
+        PMIXP_ERROR("Error connect: %s", strerror(errno));
+        return -1;
+    }
+
+    char buf[12], return_status[5];
+    memset(buf, 0, sizeof(buf));
+    memset(return_status, 0, sizeof(return_status));
+    sprintf(buf, "-123");
+
+    send(client_sock, buf, sizeof(buf), 0);
+    if (recv(client_sock, &return_status, sizeof(return_status), 0) < 0) {
+        PMIXP_ERROR("Error recv fini status: %s", strerror(errno));
+    }
+
+    int status;
+    sscanf(return_status, "%d", &status);
+
+    close(client_sock);
+
+    PMIXP_DEBUG("Status code for fini: %d", status);
+
 	PMIXP_DEBUG("%s: call fini()", pmixp_info_hostname());
 	pmixp_agent_stop();
 	pmixp_stepd_finalize();
 	_libpmix_close(libpmix_plug);
-	return SLURM_SUCCESS;
+
+	return status;
 }
 
 extern int p_mpi_hook_slurmstepd_prefork(

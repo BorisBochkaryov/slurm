@@ -272,44 +272,53 @@ static void *_pmix_abort_thread(void *unused)
 
     if ((abort_server_socket = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
         PMIXP_ERROR("Error start from abort thread");
-        return -1;
+        return NULL;
     }
 
     abort_server.sin_family = AF_INET;
-    abort_server.sin_addr.s_addr = htonl(getenv("SLURM_SRUN_COMM_HOST"));
+    abort_server.sin_addr.s_addr = INADDR_ANY;
     abort_server.sin_port = htons((u_short) 4112);
 
-    if (bind(abort_server_socket, (struct sockaddr *) &server, sizeof(server)) == -1) {
+    if (bind(abort_server_socket, (struct sockaddr *) &abort_server, sizeof(abort_server)) == -1) {
         PMIXP_ERROR("Error bind from abort thread");
-        return -1;
+        return NULL;
+    }
+
+    if (listen(abort_server_socket, 5) < 0) {
+        PMIXP_ERROR("Error listen %s", strerror(errno));
+        return NULL;
     }
 
     PMIXP_DEBUG("Server addr for abort codes: %s", inet_ntoa(abort_server.sin_addr));
+    PMIXP_DEBUG("Server addr port for abort codes: %d", abort_server.sin_port);
+
+    struct sockaddr_in abort_client;
+    int abort_client_sock, abort_client_len = sizeof(abort_client);
+    char status_code[5], return_code[5];
 
     while (1) {
-        int abort_client_sock, abort_client_len;
-        struct sockaddr_in abort_client;
-
-        if ((abort_client_sock = accept(sock, (struct sockaddr *) &abort_client, &abort_client_len)) == -1) {
-            PMIXP_ERROR("Error accept from abort thread");
-            return -1;
+        if ((abort_client_sock = accept(abort_server_socket, (struct sockaddr*) &abort_client, &abort_client_len)) < 0) {
+            PMIXP_ERROR("Error accept %s", strerror(errno));
+            return NULL;
         }
+        PMIXP_DEBUG("New abort client: %s:%d", inet_ntoa(abort_client.sin_addr), abort_client.sin_port);
 
-        PMIXP_DEBUG("New abort client: %s", inet_ntoa(abort_client.sin_addr));
-
-        int size;
-        char abort_code[255];
-        memset(abort_code, 0, sizeof(abort_code));
-
-        while ((size = recv(abort_client_sock, abort_code, sizeof(abort_code), 0)) != 0) {
-            PMIXP_DEBUG("New abort code from abort_client: %s", abort_code);
-        }
+        int size = recv(abort_client_sock, &status_code, sizeof(status_code), 0);
+        if (strcmp(status_code, "-123") == 0) {
+            PMIXP_DEBUG("Send %d to fini");
+            if (send(abort_client_sock, return_code, sizeof(return_code), 0) < 0) {
+                PMIXP_ERROR("Error send %s", strerror(errno));
+			}
+			break;
+        } else {
+            strcpy(return_code, status_code);
+		}
 
         close(abort_client_sock);
     }
 
-    rwfail:
     close(abort_server_socket);
+    return NULL;
 }
 
 static void *_pmix_timer_thread(void *unused)
@@ -387,6 +396,9 @@ int pmixp_agent_start(void)
 	PMIXP_DEBUG("timer thread started: tid = %lu",
 		    (unsigned long) _timer_tid);
 
+	PMIXP_DEBUG("abort thread started: tid = %lu",
+		    (unsigned long) _abort_tid);
+
 	slurm_mutex_unlock(&agent_mutex);
 	return SLURM_SUCCESS;
 }
@@ -416,7 +428,11 @@ int pmixp_agent_stop(void)
 		_shutdown_timeout_fds();
 	}
 
-	// TODO: close pthread_abort
+	if (_abort_tid) {
+		PMIXP_DEBUG("Kill abort thread");
+		pthread_kill(_abort_tid, SIGKILL);
+		_abort_tid = 0;
+	}
 
 	slurm_mutex_unlock(&agent_mutex);
 	return rc;
