@@ -93,6 +93,7 @@ static pthread_t _abort_tid = 0;
 
 char abort_ip[255] = "";
 int abort_port = -1;
+static pthread_mutex_t abort_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static void _libpmix_close(void *lib_plug)
 {
@@ -152,6 +153,8 @@ static void *_pmix_abort_thread(void *unused)
 
 	sprintf(abort_ip, "%s", inet_ntoa(abort_server.sin_addr));
 	abort_port = abort_server_port;
+
+	slurm_mutex_unlock(&abort_mutex);
 
 	struct sockaddr_in abort_client;
 	int abort_client_sock, abort_client_len = sizeof(abort_client);
@@ -269,6 +272,7 @@ extern mpi_plugin_client_state_t *p_mpi_hook_client_prelaunch(
 	uint32_t nnodes, ntasks, **tids;
 	uint16_t *task_cnt;
 
+	slurm_mutex_lock(&abort_mutex);
 	slurm_thread_create(&_abort_tid, _pmix_abort_thread, (void*)env);
 
 	PMIXP_DEBUG("setup process mapping in srun");
@@ -289,11 +293,12 @@ extern mpi_plugin_client_state_t *p_mpi_hook_client_prelaunch(
 		slurm_mutex_unlock(&setup_mutex);
 	}
 
-	while(abort_port == -1)
-		sleep(1);
+	slurm_mutex_lock(&abort_mutex);
 
 	setenvf(env, PMIXP_SLURM_ABORT_THREAD_IP, "%s", abort_ip);
 	setenvf(env, PMIXP_SLURM_ABORT_THREAD_PORT, "%d", abort_port);
+
+	slurm_mutex_unlock(&abort_mutex);
 
 	if (NULL == mapping) {
 		PMIXP_ERROR("Cannot create process mapping");
@@ -325,16 +330,15 @@ extern int p_mpi_hook_client_fini(void)
 	}
 
 	char buf[12], return_status[5];
-	memset(buf, 0, sizeof(buf));
 	memset(return_status, 0, sizeof(return_status));
-	sprintf(buf, "-123");
+	snprintf(buf, sizeof(buf), "-123");
 	send(client_sock, buf, sizeof(buf), 0);
 	if (recv(client_sock, &return_status, sizeof(return_status), 0) < 0) {
 		PMIXP_ERROR("Error recv fini status: %s", strerror(errno));
 	}
 
-	int status;
-	sscanf(return_status, "%d", &status);
+	int status = atoi(return_status);
+
 	close(client_sock);
 	PMIXP_DEBUG("Status code for fini: %d", status);
 

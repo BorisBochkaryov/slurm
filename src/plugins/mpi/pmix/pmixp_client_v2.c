@@ -110,8 +110,7 @@ static pmix_status_t _abort_fn(const pmix_proc_t *proc, void *server_object,
 	}
 
 	char buf[12];
-	memset(buf, 0, sizeof(buf));
-	sprintf(buf, "%d", status);
+	snprintf(buf, sizeof(buf), "%d", status);
 
 	send(client_sock, buf, sizeof(buf), 0);
 	close(client_sock);
