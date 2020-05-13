@@ -91,6 +91,9 @@ void *libpmix_plug = NULL;
 
 static pthread_t _abort_tid = 0;
 
+char abort_ip[255] = "";
+int abort_port = -1;
+
 static void _libpmix_close(void *lib_plug)
 {
 	xassert(lib_plug);
@@ -129,54 +132,54 @@ static void *_libpmix_open(void)
  */
 static void *_pmix_abort_thread(void *unused)
 {
-    PMIXP_DEBUG("Start abort thread");
-    struct sockaddr_in abort_server;
-    uint16_t abort_server_port;
-    int abort_server_socket;
-    int abort_server_info_len = sizeof(abort_server);
+	PMIXP_DEBUG("Start abort thread");
+	struct sockaddr_in abort_server;
+	uint16_t abort_server_port;
+	int abort_server_socket;
+	int abort_server_info_len = sizeof(abort_server);
 
-    if (net_stream_listen(&abort_server_socket, &abort_server_port) < 0) {
-        PMIXP_ERROR("Error listen %s", strerror(errno));
-        return NULL;
-    }
-    if (getsockname(abort_server_socket, (struct sockaddr *) &abort_server, &abort_server_info_len) < 0) {
-        PMIXP_ERROR("Error getsockname %s", strerror(errno));
-        return NULL;
-    }
+	if (net_stream_listen(&abort_server_socket, &abort_server_port) < 0) {
+		PMIXP_ERROR("Error listen %s", strerror(errno));
+		return NULL;
+	}
+	if (getsockname(abort_server_socket, (struct sockaddr *) &abort_server, &abort_server_info_len) < 0) {
+		PMIXP_ERROR("Error getsockname %s", strerror(errno));
+		return NULL;
+	}
 
-    PMIXP_ERROR("Abort server port: %d", abort_server.sin_port);
-    PMIXP_ERROR("Abort server ip: %s", inet_ntoa(abort_server.sin_addr));
+	PMIXP_DEBUG("Abort server port: %d", abort_server_port);
+	PMIXP_DEBUG("Abort server ip: %s", inet_ntoa(abort_server.sin_addr));
 
-//    setenvf((char***) unused, PMIXP_SLURM_ABORT_THREAD_PORT, "%d", abort_server.sin_port);
-//    setenvf((char***) unused, PMIXP_SLURM_ABORT_THREAD_IP, "%s", inet_ntoa(abort_server.sin_addr));
+	sprintf(abort_ip, "%s", inet_ntoa(abort_server.sin_addr));
+	abort_port = abort_server_port;
 
-    struct sockaddr_in abort_client;
-    int abort_client_sock, abort_client_len = sizeof(abort_client);
-    char status_code[5], return_code[5];
+	struct sockaddr_in abort_client;
+	int abort_client_sock, abort_client_len = sizeof(abort_client);
+	char status_code[5], return_code[5];
 
-    while (1) {
-        if ((abort_client_sock = accept(abort_server_socket, (struct sockaddr*) &abort_client, &abort_client_len)) < 0) {
-            PMIXP_ERROR("Error accept %s", strerror(errno));
-            return NULL;
-        }
-        PMIXP_DEBUG("New abort client: %s:%d", inet_ntoa(abort_client.sin_addr), abort_client.sin_port);
+	while (1) {
+		if ((abort_client_sock = accept(abort_server_socket, (struct sockaddr*) &abort_client, &abort_client_len)) < 0) {
+			PMIXP_ERROR("Error accept %s", strerror(errno));
+			return NULL;
+		}
+		PMIXP_DEBUG("New abort client: %s:%d", inet_ntoa(abort_client.sin_addr), abort_client.sin_port);
 
-        int size = recv(abort_client_sock, &status_code, sizeof(status_code), 0);
-        if (strcmp(status_code, "-123") == 0) {
-            PMIXP_DEBUG("Send %d to fini");
-            if (send(abort_client_sock, return_code, sizeof(return_code), 0) < 0) {
-                PMIXP_ERROR("Error send %s", strerror(errno));
-            }
-            break;
-        } else {
-            strcpy(return_code, status_code);
-        }
+		int size = recv(abort_client_sock, &status_code, sizeof(status_code), 0);
+		if (strcmp(status_code, "-123") == 0) {
+			PMIXP_DEBUG("Send %d to fini");
+			if (send(abort_client_sock, return_code, sizeof(return_code), 0) < 0) {
+				PMIXP_ERROR("Error send %s", strerror(errno));
+			}
+			break;
+		} else {
+			strcpy(return_code, status_code);
+		}
 
-        close(abort_client_sock);
-    }
+		close(abort_client_sock);
+	}
 
-    close(abort_server_socket);
-    return NULL;
+	close(abort_server_socket);
+	return NULL;
 }
 
 /*
@@ -286,6 +289,12 @@ extern mpi_plugin_client_state_t *p_mpi_hook_client_prelaunch(
 		slurm_mutex_unlock(&setup_mutex);
 	}
 
+	while(abort_port == -1)
+		sleep(1);
+
+	setenvf(env, PMIXP_SLURM_ABORT_THREAD_IP, "%s", abort_ip);
+	setenvf(env, PMIXP_SLURM_ABORT_THREAD_PORT, "%d", abort_port);
+
 	if (NULL == mapping) {
 		PMIXP_ERROR("Cannot create process mapping");
 		return NULL;
@@ -299,35 +308,35 @@ extern mpi_plugin_client_state_t *p_mpi_hook_client_prelaunch(
 
 extern int p_mpi_hook_client_fini(void)
 {
-    // recv abort code
-    struct sockaddr_in abort_server;
-    abort_server.sin_family = AF_INET;
-    abort_server.sin_port = htons((u_short) 4112);
-    abort_server.sin_addr.s_addr = inet_addr("192.168.0.37");
+	// recv abort code
+	struct sockaddr_in abort_server;
+	abort_server.sin_family = AF_INET;
+	abort_server.sin_port = htons((u_short) abort_port);
+	abort_server.sin_addr.s_addr = inet_addr(abort_ip);
 
-    int client_sock;
-    if((client_sock = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-        PMIXP_ERROR("Error create fini client socket");
-        return -1;
-    }
-    if(connect(client_sock, (struct sockaddr*)&abort_server, sizeof(abort_server)) == -1) {
-        PMIXP_ERROR("Error connect: %s", strerror(errno));
-        return -1;
-    }
+	int client_sock;
+	if((client_sock = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+		PMIXP_ERROR("Error create fini client socket");
+		return -1;
+	}
+	if(connect(client_sock, (struct sockaddr*)&abort_server, sizeof(abort_server)) == -1) {
+		PMIXP_ERROR("Error connect: %s", strerror(errno));
+		return -1;
+	}
 
-    char buf[12], return_status[5];
-    memset(buf, 0, sizeof(buf));
-    memset(return_status, 0, sizeof(return_status));
-    sprintf(buf, "-123");
-    send(client_sock, buf, sizeof(buf), 0);
-    if (recv(client_sock, &return_status, sizeof(return_status), 0) < 0) {
-        PMIXP_ERROR("Error recv fini status: %s", strerror(errno));
-    }
+	char buf[12], return_status[5];
+	memset(buf, 0, sizeof(buf));
+	memset(return_status, 0, sizeof(return_status));
+	sprintf(buf, "-123");
+	send(client_sock, buf, sizeof(buf), 0);
+	if (recv(client_sock, &return_status, sizeof(return_status), 0) < 0) {
+		PMIXP_ERROR("Error recv fini status: %s", strerror(errno));
+	}
 
-    int status;
-    sscanf(return_status, "%d", &status);
-    close(client_sock);
-    PMIXP_DEBUG("Status code for fini: %d", status);
+	int status;
+	sscanf(return_status, "%d", &status);
+	close(client_sock);
+	PMIXP_DEBUG("Status code for fini: %d", status);
 
 	return status;
 }
