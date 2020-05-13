@@ -89,6 +89,8 @@ const uint32_t plugin_version = SLURM_VERSION_NUMBER;
 
 void *libpmix_plug = NULL;
 
+static pthread_t _abort_tid = 0;
+
 static void _libpmix_close(void *lib_plug)
 {
 	xassert(lib_plug);
@@ -123,6 +125,66 @@ static void *_libpmix_open(void)
 }
 
 /*
+ * thread for codes from abort
+ */
+static void *_pmix_abort_thread(void *unused)
+{
+    PMIXP_DEBUG("Start abort thread");
+    struct sockaddr_in abort_server;
+    int abort_server_socket;
+
+    if ((abort_server_socket = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+        PMIXP_ERROR("Error start from abort thread");
+        return NULL;
+    }
+
+    abort_server.sin_family = AF_INET;
+    abort_server.sin_addr.s_addr = INADDR_ANY;
+    abort_server.sin_port = htons((u_short) 4112);
+
+    if (bind(abort_server_socket, (struct sockaddr *) &abort_server, sizeof(abort_server)) == -1) {
+        PMIXP_ERROR("Error bind from abort thread%s", strerror(errno));
+        return NULL;
+    }
+
+    if (listen(abort_server_socket, 5) < 0) {
+        PMIXP_ERROR("Error listen %s", strerror(errno));
+        return NULL;
+    }
+
+    PMIXP_DEBUG("Server addr for abort codes: %s", inet_ntoa(abort_server.sin_addr));
+    PMIXP_DEBUG("Server addr port for abort codes: %d", abort_server.sin_port);
+
+    struct sockaddr_in abort_client;
+    int abort_client_sock, abort_client_len = sizeof(abort_client);
+    char status_code[5], return_code[5];
+
+    while (1) {
+        if ((abort_client_sock = accept(abort_server_socket, (struct sockaddr*) &abort_client, &abort_client_len)) < 0) {
+            PMIXP_ERROR("Error accept %s", strerror(errno));
+            return NULL;
+        }
+        PMIXP_DEBUG("New abort client: %s:%d", inet_ntoa(abort_client.sin_addr), abort_client.sin_port);
+
+        int size = recv(abort_client_sock, &status_code, sizeof(status_code), 0);
+        if (strcmp(status_code, "-123") == 0) {
+            PMIXP_DEBUG("Send %d to fini");
+            if (send(abort_client_sock, return_code, sizeof(return_code), 0) < 0) {
+                PMIXP_ERROR("Error send %s", strerror(errno));
+            }
+            break;
+        } else {
+            strcpy(return_code, status_code);
+        }
+
+        close(abort_client_sock);
+    }
+
+    close(abort_server_socket);
+    return NULL;
+}
+
+/*
  * init() is called when the plugin is loaded, before any other functions
  * are called.  Put global initialization here.
  */
@@ -138,46 +200,11 @@ extern int init(void)
 
 extern int fini(void)
 {
-	// recv abort code
-	struct sockaddr_in abort_server;
-	abort_server.sin_family = AF_INET;
-    abort_server.sin_port = htons((u_short) 4112);
-    abort_server.sin_addr.s_addr = inet_addr("192.168.0.37");
-
-    int client_sock;
-    if((client_sock = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-        PMIXP_ERROR("Error create fini client socket");
-        return -1;
-    }
-
-    if(connect(client_sock, (struct sockaddr*)&abort_server, sizeof(abort_server)) == -1) {
-        PMIXP_ERROR("Error connect: %s", strerror(errno));
-        return -1;
-    }
-
-    char buf[12], return_status[5];
-    memset(buf, 0, sizeof(buf));
-    memset(return_status, 0, sizeof(return_status));
-    sprintf(buf, "-123");
-
-    send(client_sock, buf, sizeof(buf), 0);
-    if (recv(client_sock, &return_status, sizeof(return_status), 0) < 0) {
-        PMIXP_ERROR("Error recv fini status: %s", strerror(errno));
-    }
-
-    int status;
-    sscanf(return_status, "%d", &status);
-
-    close(client_sock);
-
-    PMIXP_DEBUG("Status code for fini: %d", status);
-
 	PMIXP_DEBUG("%s: call fini()", pmixp_info_hostname());
 	pmixp_agent_stop();
 	pmixp_stepd_finalize();
 	_libpmix_close(libpmix_plug);
-
-	return status;
+	return SLURM_SUCCESS;
 }
 
 extern int p_mpi_hook_slurmstepd_prefork(
@@ -275,7 +302,35 @@ extern mpi_plugin_client_state_t *p_mpi_hook_client_prelaunch(
 
 extern int p_mpi_hook_client_fini(void)
 {
-    // TODO: Getting the exit code from socket_abort
+    // recv abort code
+    struct sockaddr_in abort_server;
+    abort_server.sin_family = AF_INET;
+    abort_server.sin_port = htons((u_short) 4112);
+    abort_server.sin_addr.s_addr = inet_addr("192.168.0.37");
 
-	return SLURM_SUCCESS;
+    int client_sock;
+    if((client_sock = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+        PMIXP_ERROR("Error create fini client socket");
+        return -1;
+    }
+    if(connect(client_sock, (struct sockaddr*)&abort_server, sizeof(abort_server)) == -1) {
+        PMIXP_ERROR("Error connect: %s", strerror(errno));
+        return -1;
+    }
+
+    char buf[12], return_status[5];
+    memset(buf, 0, sizeof(buf));
+    memset(return_status, 0, sizeof(return_status));
+    sprintf(buf, "-123");
+    send(client_sock, buf, sizeof(buf), 0);
+    if (recv(client_sock, &return_status, sizeof(return_status), 0) < 0) {
+        PMIXP_ERROR("Error recv fini status: %s", strerror(errno));
+    }
+
+    int status;
+    sscanf(return_status, "%d", &status);
+    close(client_sock);
+    PMIXP_DEBUG("Status code for fini: %d", status);
+
+	return status;
 }
