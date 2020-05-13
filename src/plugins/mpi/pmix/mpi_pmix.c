@@ -271,6 +271,8 @@ extern mpi_plugin_client_state_t *p_mpi_hook_client_prelaunch(
 	uint32_t nnodes, ntasks, **tids;
 	uint16_t *task_cnt;
 
+    slurm_thread_create(&_abort_tid, _pmix_abort_thread, NULL);
+
 	PMIXP_DEBUG("setup process mapping in srun");
 	if ((job->het_job_id == NO_VAL) || (job->het_job_task_offset == 0)) {
 		nnodes = job->step_layout->node_cnt;
