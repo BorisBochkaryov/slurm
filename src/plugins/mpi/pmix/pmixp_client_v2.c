@@ -89,22 +89,25 @@ static pmix_status_t _abort_fn(const pmix_proc_t *proc, void *server_object,
 	/* Just kill this stepid for now. Think what we can do for FT here? */
 	PMIXP_DEBUG("called: status = %d, msg = %s", status, msg);
 
-    int port = (int)getenv(PMIXP_SLURM_ABORT_THREAD_PORT);
-    char* ip = (char*)getenv(PMIXP_SLURM_ABORT_THREAD_IP);
-    PMIXP_DEBUG("Abort server ip:port in _abort_fn: %s:%d", ip, port);
+	int port = pmixp_info_abort_port();
+	char* ip = pmixp_info_abort_ip();
+	PMIXP_DEBUG("Abort server ip:port in _abort_fn: %s:%d", ip, port);
 
 	struct sockaddr_in abort_server;
 	abort_server.sin_family = AF_INET;
 	abort_server.sin_port = htons((u_short) port);
 	abort_server.sin_addr.s_addr = inet_addr(ip);
 
-	PMIXP_DEBUG("Server addr for abort codes from _abort_fn: %s", inet_ntoa(abort_server.sin_addr));
-	PMIXP_DEBUG("Server port for abort codes from _abort_fn: %d", abort_server.sin_port);
+	int client_sock;
+	if((client_sock = socket(AF_INET, SOCK_STREAM, 0)) == -1){
+		PMIXP_ERROR("Error create client socket");
+		return -1;
+	}
 
-    if ((client_sock = slurm_open_stream(abort_server, true)) < 0) {
-        PMIXP_ERROR("Error slurm_open_stream: %s", strerror(errno));
-        return -1;
-    }
+	if(connect(client_sock, (struct sockaddr*)&abort_server, sizeof(abort_server)) == -1){
+		PMIXP_ERROR("Error connect: %s", strerror(errno));
+		return -1;
+	}
 
 	char buf[12];
 	memset(buf, 0, sizeof(buf));
