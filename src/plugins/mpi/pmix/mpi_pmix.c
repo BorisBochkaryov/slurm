@@ -131,29 +131,24 @@ static void *_pmix_abort_thread(void *unused)
 {
     PMIXP_DEBUG("Start abort thread");
     struct sockaddr_in abort_server;
+    uint16_t abort_server_port;
     int abort_server_socket;
+    int abort_server_info_len = sizeof(abort_server);
 
-    if ((abort_server_socket = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-        PMIXP_ERROR("Error start from abort thread");
-        return NULL;
-    }
-
-    abort_server.sin_family = AF_INET;
-    abort_server.sin_addr.s_addr = INADDR_ANY;
-    abort_server.sin_port = htons((u_short) 4112);
-
-    if (bind(abort_server_socket, (struct sockaddr *) &abort_server, sizeof(abort_server)) == -1) {
-        PMIXP_ERROR("Error bind from abort thread%s", strerror(errno));
-        return NULL;
-    }
-
-    if (listen(abort_server_socket, 5) < 0) {
+    if (net_stream_listen(&abort_server_socket, &abort_server_port) < 0) {
         PMIXP_ERROR("Error listen %s", strerror(errno));
         return NULL;
     }
+    if (getsockname(abort_server_socket, (struct sockaddr *) &abort_server, &abort_server_info_len) < 0) {
+        PMIXP_ERROR("Error getsockname %s", strerror(errno));
+        return NULL;
+    }
 
-    PMIXP_DEBUG("Server addr for abort codes: %s", inet_ntoa(abort_server.sin_addr));
-    PMIXP_DEBUG("Server addr port for abort codes: %d", abort_server.sin_port);
+    PMIXP_ERROR("Abort server port: %d", abort_server.sin_port);
+    PMIXP_ERROR("Abort server ip: %s", inet_ntoa(abort_server.sin_addr));
+
+//    setenvf((char***) unused, PMIXP_SLURM_ABORT_THREAD_PORT, "%d", abort_server.sin_port);
+//    setenvf((char***) unused, PMIXP_SLURM_ABORT_THREAD_IP, "%s", inet_ntoa(abort_server.sin_addr));
 
     struct sockaddr_in abort_client;
     int abort_client_sock, abort_client_len = sizeof(abort_client);
@@ -271,7 +266,7 @@ extern mpi_plugin_client_state_t *p_mpi_hook_client_prelaunch(
 	uint32_t nnodes, ntasks, **tids;
 	uint16_t *task_cnt;
 
-    slurm_thread_create(&_abort_tid, _pmix_abort_thread, NULL);
+    slurm_thread_create(&_abort_tid, _pmix_abort_thread, (void*)env);
 
 	PMIXP_DEBUG("setup process mapping in srun");
 	if ((job->het_job_id == NO_VAL) || (job->het_job_task_offset == 0)) {
