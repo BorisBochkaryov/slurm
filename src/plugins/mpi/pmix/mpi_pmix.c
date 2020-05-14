@@ -308,7 +308,7 @@ extern int p_mpi_hook_client_fini(void)
 {
 	PMIXP_DEBUG("Status code for fini: %d", status);
 
-    pthread_kill(_abort_tid, SIGKILL);
+	pthread_kill(_abort_tid, SIGKILL);
 
 	return abort_status;
 }
