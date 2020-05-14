@@ -146,8 +146,7 @@ static void *_pmix_abort_thread(void *unused)
 	memset(&abort_server, 0, sizeof(slurm_addr_t));
 
 	slurm_get_stream_addr(abort_server_socket, &abort_server);
-	PMIXP_DEBUG("Abort server port: %d", abort_server.sin_port);
-	PMIXP_DEBUG("Abort server ip: %s", inet_ntoa(abort_server.sin_addr));
+	PMIXP_DEBUG("Abort server ip:port: %s:%d", inet_ntoa(abort_server.sin_addr), abort_server.sin_port);
 
 	sprintf(abort_ip, "%s", inet_ntoa(abort_server.sin_addr));
 	abort_port = abort_server.sin_port;
@@ -165,7 +164,7 @@ static void *_pmix_abort_thread(void *unused)
 		}
 		PMIXP_DEBUG("New abort client: %s:%d", inet_ntoa(abort_client.sin_addr), abort_client.sin_port);
 
-		int size = recv(abort_client_sock, &status_code, sizeof(status_code), 0);
+		slurm_read_stream(abort_client_sock, &status_code, sizeof(status_code));
 		abort_status = atoi(status_code);
 
 		close(abort_client_sock);
@@ -304,8 +303,6 @@ extern mpi_plugin_client_state_t *p_mpi_hook_client_prelaunch(
 extern int p_mpi_hook_client_fini(void)
 {
 	PMIXP_DEBUG("Status code for fini: %d", abort_status);
-
-	pthread_kill(_abort_tid, SIGKILL);
 
 	return abort_status;
 }

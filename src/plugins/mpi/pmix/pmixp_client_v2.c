@@ -89,17 +89,12 @@ static pmix_status_t _abort_fn(const pmix_proc_t *proc, void *server_object,
 	/* Just kill this stepid for now. Think what we can do for FT here? */
 	PMIXP_DEBUG("called: status = %d, msg = %s", status, msg);
 
-	int abort_port = pmixp_info_abort_port();
-	char* abort_ip = pmixp_info_abort_ip();
-	PMIXP_DEBUG("Abort server ip:port in _abort_fn: %s:%d", abort_ip, abort_port);
-
 	slurm_addr_t abort_server;
 	abort_server.sin_family = AF_INET;
-	abort_server.sin_port = htons((u_short) abort_port);
-	abort_server.sin_addr.s_addr = inet_addr(abort_ip);
+	abort_server.sin_port = pmixp_info_abort_port();
+	abort_server.sin_addr.s_addr = inet_addr(pmixp_info_abort_ip());
 
 	int client_sock;
-
 	if((client_sock = slurm_open_msg_conn(&abort_server)) < 0){
 		PMIXP_ERROR("Error create and conn client socket: %s", strerror(errno));
 		return SLURM_ERROR;
@@ -107,8 +102,7 @@ static pmix_status_t _abort_fn(const pmix_proc_t *proc, void *server_object,
 
 	char buf[12];
 	snprintf(buf, sizeof(buf), "%d", status);
-
-	send(client_sock, buf, sizeof(buf), 0);
+	slurm_write_stream(client_sock, buf, sizeof(buf));
 	close(client_sock);
 
 	slurm_kill_job_step(pmixp_info_jobid(), pmixp_info_stepid(), SIGKILL);
