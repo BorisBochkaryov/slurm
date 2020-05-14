@@ -159,7 +159,7 @@ static void *_pmix_abort_thread(void *unused)
 	char status_code[5], return_code[5];
 
 	while (1) {
-		if ((abort_client_sock = accept(abort_server_socket, (struct sockaddr*) &abort_client, &abort_client_len)) < 0) {
+		if ((abort_client_sock = slurm_accept_msg_conn(abort_server_socket, &abort_client)) < 0) {
 			PMIXP_ERROR("Error accept %s", strerror(errno));
 			return NULL;
 		}
