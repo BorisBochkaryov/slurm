@@ -135,25 +135,22 @@ static void *_libpmix_open(void)
 static void *_pmix_abort_thread(void *unused)
 {
 	PMIXP_DEBUG("Start abort thread");
-	struct sockaddr_in abort_server;
-	uint16_t abort_server_port;
-	int abort_server_socket;
-	int abort_server_info_len = sizeof(abort_server);
 
-	if (net_stream_listen(&abort_server_socket, &abort_server_port) < 0) {
-		PMIXP_ERROR("Error listen %s", strerror(errno));
-		return NULL;
-	}
-	if (getsockname(abort_server_socket, (struct sockaddr *) &abort_server, &abort_server_info_len) < 0) {
-		PMIXP_ERROR("Error getsockname %s", strerror(errno));
+	int abort_server_socket = -1;
+	if ((abort_server_socket = slurm_init_msg_engine_port(0)) < 0) {
+		PMIXP_ERROR("Error slurm_open_stream %s", strerror(errno));
 		return NULL;
 	}
 
-	PMIXP_DEBUG("Abort server port: %d", abort_server_port);
+	slurm_addr_t abort_server;
+	memset(&abort_server, 0, sizeof(slurm_addr_t));
+
+	slurm_get_stream_addr(abort_server_socket, &abort_server);
+	PMIXP_DEBUG("Abort server port: %d", abort_server.sin_port);
 	PMIXP_DEBUG("Abort server ip: %s", inet_ntoa(abort_server.sin_addr));
 
 	sprintf(abort_ip, "%s", inet_ntoa(abort_server.sin_addr));
-	abort_port = abort_server_port;
+	abort_port = abort_server.sin_port;
 
 	slurm_mutex_unlock(&abort_mutex);
 
@@ -306,7 +303,7 @@ extern mpi_plugin_client_state_t *p_mpi_hook_client_prelaunch(
 
 extern int p_mpi_hook_client_fini(void)
 {
-	PMIXP_DEBUG("Status code for fini: %d", status);
+	PMIXP_DEBUG("Status code for fini: %d", abort_status);
 
 	pthread_kill(_abort_tid, SIGKILL);
 

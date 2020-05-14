@@ -93,19 +93,15 @@ static pmix_status_t _abort_fn(const pmix_proc_t *proc, void *server_object,
 	char* abort_ip = pmixp_info_abort_ip();
 	PMIXP_DEBUG("Abort server ip:port in _abort_fn: %s:%d", abort_ip, abort_port);
 
-	struct sockaddr_in abort_server;
+	slurm_addr_t abort_server;
 	abort_server.sin_family = AF_INET;
 	abort_server.sin_port = htons((u_short) abort_port);
 	abort_server.sin_addr.s_addr = inet_addr(abort_ip);
 
 	int client_sock;
-	if((client_sock = socket(AF_INET, SOCK_STREAM, 0)) == -1){
-		PMIXP_ERROR("Error create client socket");
-		return SLURM_ERROR;
-	}
 
-	if(connect(client_sock, (struct sockaddr*)&abort_server, sizeof(abort_server)) == -1){
-		PMIXP_ERROR("Error connect: %s", strerror(errno));
+	if((client_sock = slurm_open_msg_conn(&abort_server)) < 0){
+		PMIXP_ERROR("Error create and conn client socket: %s", strerror(errno));
 		return SLURM_ERROR;
 	}
 
@@ -115,7 +111,6 @@ static pmix_status_t _abort_fn(const pmix_proc_t *proc, void *server_object,
 	send(client_sock, buf, sizeof(buf), 0);
 	close(client_sock);
 
-	// TODO: Need to kill?
 	slurm_kill_job_step(pmixp_info_jobid(), pmixp_info_stepid(), SIGKILL);
 
 	return status;
