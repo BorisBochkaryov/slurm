@@ -93,6 +93,7 @@ static pthread_t _abort_tid = 0;
 
 char abort_ip[255] = "";
 int abort_port = -1;
+int abort_status = -1;
 static pthread_mutex_t abort_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static void _libpmix_close(void *lib_plug)
@@ -168,15 +169,7 @@ static void *_pmix_abort_thread(void *unused)
 		PMIXP_DEBUG("New abort client: %s:%d", inet_ntoa(abort_client.sin_addr), abort_client.sin_port);
 
 		int size = recv(abort_client_sock, &status_code, sizeof(status_code), 0);
-		if (strcmp(status_code, "-123") == 0) {
-			PMIXP_DEBUG("Send %d to fini");
-			if (send(abort_client_sock, return_code, sizeof(return_code), 0) < 0) {
-				PMIXP_ERROR("Error send %s", strerror(errno));
-			}
-			break;
-		} else {
-			strcpy(return_code, status_code);
-		}
+		abort_status = atoi(status_code);
 
 		close(abort_client_sock);
 	}
@@ -313,34 +306,9 @@ extern mpi_plugin_client_state_t *p_mpi_hook_client_prelaunch(
 
 extern int p_mpi_hook_client_fini(void)
 {
-	// recv abort code
-	struct sockaddr_in abort_server;
-	abort_server.sin_family = AF_INET;
-	abort_server.sin_port = htons((u_short) abort_port);
-	abort_server.sin_addr.s_addr = inet_addr(abort_ip);
-
-	int client_sock;
-	if((client_sock = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-		PMIXP_ERROR("Error create fini client socket");
-		return -1;
-	}
-	if(connect(client_sock, (struct sockaddr*)&abort_server, sizeof(abort_server)) == -1) {
-		PMIXP_ERROR("Error connect: %s", strerror(errno));
-		return -1;
-	}
-
-	char buf[12], return_status[5];
-	memset(return_status, 0, sizeof(return_status));
-	snprintf(buf, sizeof(buf), "-123");
-	send(client_sock, buf, sizeof(buf), 0);
-	if (recv(client_sock, &return_status, sizeof(return_status), 0) < 0) {
-		PMIXP_ERROR("Error recv fini status: %s", strerror(errno));
-	}
-
-	int status = atoi(return_status);
-
-	close(client_sock);
 	PMIXP_DEBUG("Status code for fini: %d", status);
 
-	return status;
+    pthread_kill(_abort_tid, SIGKILL);
+
+	return abort_status;
 }
