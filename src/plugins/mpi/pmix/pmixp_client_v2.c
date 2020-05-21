@@ -91,8 +91,8 @@ static pmix_status_t _abort_fn(const pmix_proc_t *proc, void *server_object,
 
 	slurm_addr_t abort_server;
 	abort_server.sin_family = AF_INET;
-	abort_server.sin_port = pmixp_info_abort_port();
-	abort_server.sin_addr.s_addr = inet_addr(pmixp_info_abort_ip());
+	abort_server.sin_port = pmixp_info_abort_agent_port();
+	abort_server.sin_addr.s_addr = inet_addr(pmixp_info_srun_ip());
 
 	int client_sock;
 	if((client_sock = slurm_open_msg_conn(&abort_server)) < 0){

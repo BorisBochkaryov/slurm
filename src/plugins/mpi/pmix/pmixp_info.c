@@ -296,8 +296,9 @@ static int _resources_set(char ***env)
 {
 	char *p = NULL;
 
-	sprintf(_pmixp_job_info.abort_ip,"%s", getenvp(*env, PMIXP_SLURM_ABORT_THREAD_IP));
-	_pmixp_job_info.abort_port = atoi(getenvp(*env, PMIXP_SLURM_ABORT_THREAD_PORT));
+	_pmixp_job_info.srun_ip = (char*) malloc(sizeof(char) * PMIXP_MAX_NSLEN)
+	sprintf(_pmixp_job_info.srun_ip,"%s", getenvp(*env, PMIXP_SLURM_ABORT_THREAD_IP));
+	_pmixp_job_info.abort_agent_port = atoi(getenvp(*env, PMIXP_SLURM_ABORT_THREAD_PORT));
 
 	/* Initialize all memory pointers that would be allocated to NULL
 	 * So in case of error exit we will know what to xfree

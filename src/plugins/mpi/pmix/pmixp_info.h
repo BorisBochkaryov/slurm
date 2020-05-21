@@ -73,8 +73,8 @@ typedef struct {
 	char *spool_dir;
 	uid_t uid;
 	gid_t gid;
-	char abort_ip[PMIXP_MAX_NSLEN];
-	int abort_port;
+	char* srun_ip;
+	int abort_agent_port;
 } pmix_jobinfo_t;
 
 extern pmix_jobinfo_t _pmixp_job_info;
@@ -146,16 +146,16 @@ static inline uint32_t pmixp_info_jobid(void)
 	return _pmixp_job_info.jobid;
 }
 
-static inline char *pmixp_info_abort_ip(void)
+static inline char *pmixp_info_srun_ip(void)
 {
 	xassert(_pmixp_job_info.magic == PMIXP_INFO_MAGIC);
-	return _pmixp_job_info.abort_ip;
+	return _pmixp_job_info.srun_ip;
 }
 
-static inline int pmixp_info_abort_port(void)
+static inline int pmixp_info_abort_agent_port(void)
 {
 	xassert(_pmixp_job_info.magic == PMIXP_INFO_MAGIC);
-	return _pmixp_job_info.abort_port;
+	return _pmixp_job_info.abort_agent_port;
 }
 
 static inline uint32_t pmixp_info_stepid(void)
