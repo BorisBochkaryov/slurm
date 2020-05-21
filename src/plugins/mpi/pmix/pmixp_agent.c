@@ -79,10 +79,7 @@ static struct io_operations to_ops = {
 
 static pthread_t _abort_tid = 0;
 
-char abort_ip[255] = "";
-int abort_port = -1;
 int abort_status_local = -1;
-static pthread_mutex_t abort_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static bool _conn_readable(eio_obj_t *obj)
 {
@@ -301,7 +298,7 @@ rwfail:
 /*
  * thread for codes from abort
  */
-static void *_pmix_abort_thread(void *unused)
+static void *_pmix_abort_thread(void *args)
 {
 	PMIXP_DEBUG("Start abort thread");
 
@@ -317,10 +314,10 @@ static void *_pmix_abort_thread(void *unused)
 	slurm_get_stream_addr(abort_server_socket, &abort_server);
 	PMIXP_DEBUG("Abort server ip:port: %s:%d", inet_ntoa(abort_server.sin_addr), abort_server.sin_port);
 
-	sprintf(abort_ip, "%s", inet_ntoa(abort_server.sin_addr));
-	abort_port = abort_server.sin_port;
+	char*** env = (char***)args;
 
-	slurm_mutex_unlock(&abort_mutex);
+	setenvf(env, PMIXP_SLURM_ABORT_THREAD_IP, "%s", inet_ntoa(abort_server.sin_addr));
+	setenvf(env, PMIXP_SLURM_ABORT_THREAD_PORT, "%d", abort_server.sin_port);
 
 	struct sockaddr_in abort_client;
 	int abort_client_sock, abort_client_len = sizeof(abort_client);
@@ -345,15 +342,7 @@ static void *_pmix_abort_thread(void *unused)
 
 int pmixp_abort_agent_start(char ***env)
 {
-	slurm_mutex_lock(&abort_mutex);
 	slurm_thread_create(&_abort_tid, _pmix_abort_thread, (void*)env);
-
-	slurm_mutex_lock(&abort_mutex);
-
-	setenvf(env, PMIXP_SLURM_ABORT_THREAD_IP, "%s", abort_ip);
-	setenvf(env, PMIXP_SLURM_ABORT_THREAD_PORT, "%d", abort_port);
-
-	slurm_mutex_unlock(&abort_mutex);
 
 	return SLURM_SUCCESS;
 }
