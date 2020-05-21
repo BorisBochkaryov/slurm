@@ -88,6 +88,7 @@ const char plugin_type[] = "mpi/pmix_v3";
 const uint32_t plugin_version = SLURM_VERSION_NUMBER;
 
 void *libpmix_plug = NULL;
+
 static void _libpmix_close(void *lib_plug)
 {
 	xassert(lib_plug);
@@ -214,6 +215,7 @@ extern mpi_plugin_client_state_t *p_mpi_hook_client_prelaunch(
 	static bool setup_done = false;
 	uint32_t nnodes, ntasks, **tids;
 	uint16_t *task_cnt;
+
 	PMIXP_DEBUG("setup process mapping in srun");
 	if ((job->het_job_id == NO_VAL) || (job->het_job_task_offset == 0)) {
 		nnodes = job->step_layout->node_cnt;
@@ -231,6 +233,7 @@ extern mpi_plugin_client_state_t *p_mpi_hook_client_prelaunch(
 			slurm_cond_wait(&setup_cond, &setup_mutex);
 		slurm_mutex_unlock(&setup_mutex);
 	}
+
 	if (NULL == mapping) {
 		PMIXP_ERROR("Cannot create process mapping");
 		return NULL;
