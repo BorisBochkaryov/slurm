@@ -139,6 +139,7 @@ extern int fini(void)
 {
 	PMIXP_DEBUG("%s: call fini()", pmixp_info_hostname());
 	pmixp_agent_stop();
+	pmixp_abort_agent_stop();
 	pmixp_stepd_finalize();
 	_libpmix_close(libpmix_plug);
 	return SLURM_SUCCESS;

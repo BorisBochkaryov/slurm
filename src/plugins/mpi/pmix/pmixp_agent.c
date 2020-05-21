@@ -358,6 +358,13 @@ int pmixp_abort_agent_start(char ***env)
 	return SLURM_SUCCESS;
 }
 
+int pmixp_abort_agent_stop(void)
+{
+	pthread_kill(_abort_tid, SIGKILL);
+
+	return SLURM_SUCCESS;
+}
+
 int pmixp_agent_start(void)
 {
 	slurm_mutex_lock(&agent_mutex);
