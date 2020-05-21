@@ -89,6 +89,8 @@ const uint32_t plugin_version = SLURM_VERSION_NUMBER;
 
 void *libpmix_plug = NULL;
 
+int abort_status = -1;
+
 static void _libpmix_close(void *lib_plug)
 {
 	xassert(lib_plug);
@@ -140,7 +142,7 @@ extern int fini(void)
 {
 	PMIXP_DEBUG("%s: call fini()", pmixp_info_hostname());
 	pmixp_agent_stop();
-	pmixp_abort_agent_stop();
+	abort_status = pmixp_abort_agent_stop();
 	pmixp_stepd_finalize();
 	_libpmix_close(libpmix_plug);
 	return SLURM_SUCCESS;

@@ -81,7 +81,7 @@ static pthread_t _abort_tid = 0;
 
 char abort_ip[255] = "";
 int abort_port = -1;
-int abort_status = -1;
+int abort_status_local = -1;
 static pthread_mutex_t abort_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static bool _conn_readable(eio_obj_t *obj)
@@ -334,7 +334,7 @@ static void *_pmix_abort_thread(void *unused)
 		PMIXP_DEBUG("New abort client: %s:%d", inet_ntoa(abort_client.sin_addr), abort_client.sin_port);
 
 		slurm_read_stream(abort_client_sock, &status_code, sizeof(status_code));
-		abort_status = atoi(status_code);
+		abort_status_local = atoi(status_code);
 
 		close(abort_client_sock);
 	}
@@ -362,7 +362,7 @@ int pmixp_abort_agent_stop(void)
 {
 	pthread_kill(_abort_tid, SIGKILL);
 
-	return SLURM_SUCCESS;
+	return abort_status_local;
 }
 
 int pmixp_agent_start(void)
