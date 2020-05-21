@@ -88,14 +88,6 @@ const char plugin_type[] = "mpi/pmix_v3";
 const uint32_t plugin_version = SLURM_VERSION_NUMBER;
 
 void *libpmix_plug = NULL;
-
-static pthread_t _abort_tid = 0;
-
-char abort_ip[255] = "";
-int abort_port = -1;
-int abort_status = -1;
-static pthread_mutex_t abort_mutex = PTHREAD_MUTEX_INITIALIZER;
-
 static void _libpmix_close(void *lib_plug)
 {
 	xassert(lib_plug);
@@ -127,51 +119,6 @@ static void *_libpmix_open(void)
 	}
 
 	return lib_plug;
-}
-
-/*
- * thread for codes from abort
- */
-static void *_pmix_abort_thread(void *unused)
-{
-	PMIXP_DEBUG("Start abort thread");
-
-	int abort_server_socket = -1;
-	if ((abort_server_socket = slurm_init_msg_engine_port(0)) < 0) {
-		PMIXP_ERROR("Error slurm_open_stream %s", strerror(errno));
-		return NULL;
-	}
-
-	slurm_addr_t abort_server;
-	memset(&abort_server, 0, sizeof(slurm_addr_t));
-
-	slurm_get_stream_addr(abort_server_socket, &abort_server);
-	PMIXP_DEBUG("Abort server ip:port: %s:%d", inet_ntoa(abort_server.sin_addr), abort_server.sin_port);
-
-	sprintf(abort_ip, "%s", inet_ntoa(abort_server.sin_addr));
-	abort_port = abort_server.sin_port;
-
-	slurm_mutex_unlock(&abort_mutex);
-
-	struct sockaddr_in abort_client;
-	int abort_client_sock, abort_client_len = sizeof(abort_client);
-	char status_code[5], return_code[5];
-
-	while (1) {
-		if ((abort_client_sock = slurm_accept_msg_conn(abort_server_socket, &abort_client)) < 0) {
-			PMIXP_ERROR("Error accept %s", strerror(errno));
-			return NULL;
-		}
-		PMIXP_DEBUG("New abort client: %s:%d", inet_ntoa(abort_client.sin_addr), abort_client.sin_port);
-
-		slurm_read_stream(abort_client_sock, &status_code, sizeof(status_code));
-		abort_status = atoi(status_code);
-
-		close(abort_client_sock);
-	}
-
-	close(abort_server_socket);
-	return NULL;
 }
 
 /*
@@ -211,6 +158,12 @@ extern int p_mpi_hook_slurmstepd_prefork(
 		PMIXP_ERROR("pmixp_stepd_init() failed");
 		goto err_ext;
 	}
+
+	if (SLURM_SUCCESS != (ret = pmixp_abort_agent_start(env))) {
+		PMIXP_ERROR("pmixp_abort_agent_start() failed");
+		goto err_ext;
+	}
+
 	if (SLURM_SUCCESS != (ret = pmixp_agent_start())) {
 		PMIXP_ERROR("pmixp_agent_start() failed");
 		goto err_ext;
@@ -260,10 +213,6 @@ extern mpi_plugin_client_state_t *p_mpi_hook_client_prelaunch(
 	static bool setup_done = false;
 	uint32_t nnodes, ntasks, **tids;
 	uint16_t *task_cnt;
-
-	slurm_mutex_lock(&abort_mutex);
-	slurm_thread_create(&_abort_tid, _pmix_abort_thread, (void*)env);
-
 	PMIXP_DEBUG("setup process mapping in srun");
 	if ((job->het_job_id == NO_VAL) || (job->het_job_task_offset == 0)) {
 		nnodes = job->step_layout->node_cnt;
@@ -281,14 +230,6 @@ extern mpi_plugin_client_state_t *p_mpi_hook_client_prelaunch(
 			slurm_cond_wait(&setup_cond, &setup_mutex);
 		slurm_mutex_unlock(&setup_mutex);
 	}
-
-	slurm_mutex_lock(&abort_mutex);
-
-	setenvf(env, PMIXP_SLURM_ABORT_THREAD_IP, "%s", abort_ip);
-	setenvf(env, PMIXP_SLURM_ABORT_THREAD_PORT, "%d", abort_port);
-
-	slurm_mutex_unlock(&abort_mutex);
-
 	if (NULL == mapping) {
 		PMIXP_ERROR("Cannot create process mapping");
 		return NULL;

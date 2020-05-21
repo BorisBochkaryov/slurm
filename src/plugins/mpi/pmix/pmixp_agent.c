@@ -77,6 +77,13 @@ static struct io_operations to_ops = {
 	.handle_read = &_timer_conn_read
 };
 
+static pthread_t _abort_tid = 0;
+
+char abort_ip[255] = "";
+int abort_port = -1;
+int abort_status = -1;
+static pthread_mutex_t abort_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 static bool _conn_readable(eio_obj_t *obj)
 {
 	if (obj->shutdown == true) {
@@ -289,6 +296,66 @@ static void *_pmix_timer_thread(void *unused)
 
 rwfail:
 	return NULL;
+}
+
+/*
+ * thread for codes from abort
+ */
+static void *_pmix_abort_thread(void *unused)
+{
+	PMIXP_DEBUG("Start abort thread");
+
+	int abort_server_socket = -1;
+	if ((abort_server_socket = slurm_init_msg_engine_port(0)) < 0) {
+		PMIXP_ERROR("Error slurm_open_stream %s", strerror(errno));
+		return NULL;
+	}
+
+	slurm_addr_t abort_server;
+	memset(&abort_server, 0, sizeof(slurm_addr_t));
+
+	slurm_get_stream_addr(abort_server_socket, &abort_server);
+	PMIXP_DEBUG("Abort server ip:port: %s:%d", inet_ntoa(abort_server.sin_addr), abort_server.sin_port);
+
+	sprintf(abort_ip, "%s", inet_ntoa(abort_server.sin_addr));
+	abort_port = abort_server.sin_port;
+
+	slurm_mutex_unlock(&abort_mutex);
+
+	struct sockaddr_in abort_client;
+	int abort_client_sock, abort_client_len = sizeof(abort_client);
+	char status_code[5], return_code[5];
+
+	while (1) {
+		if ((abort_client_sock = slurm_accept_msg_conn(abort_server_socket, &abort_client)) < 0) {
+			PMIXP_ERROR("Error accept %s", strerror(errno));
+			return NULL;
+		}
+		PMIXP_DEBUG("New abort client: %s:%d", inet_ntoa(abort_client.sin_addr), abort_client.sin_port);
+
+		slurm_read_stream(abort_client_sock, &status_code, sizeof(status_code));
+		abort_status = atoi(status_code);
+
+		close(abort_client_sock);
+	}
+
+	close(abort_server_socket);
+	return NULL;
+}
+
+int pmixp_abort_agent_start(char ***env)
+{
+	slurm_mutex_lock(&abort_mutex);
+	slurm_thread_create(&_abort_tid, _pmix_abort_thread, (void*)env);
+
+	slurm_mutex_lock(&abort_mutex);
+
+	setenvf(env, PMIXP_SLURM_ABORT_THREAD_IP, "%s", abort_ip);
+	setenvf(env, PMIXP_SLURM_ABORT_THREAD_PORT, "%d", abort_port);
+
+	slurm_mutex_unlock(&abort_mutex);
+
+	return SLURM_SUCCESS;
 }
 
 int pmixp_agent_start(void)
