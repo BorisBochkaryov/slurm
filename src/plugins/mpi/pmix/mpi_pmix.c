@@ -89,8 +89,6 @@ const uint32_t plugin_version = SLURM_VERSION_NUMBER;
 
 void *libpmix_plug = NULL;
 
-int abort_status = -1;
-
 static void _libpmix_close(void *lib_plug)
 {
 	xassert(lib_plug);
@@ -142,7 +140,6 @@ extern int fini(void)
 {
 	PMIXP_DEBUG("%s: call fini()", pmixp_info_hostname());
 	pmixp_agent_stop();
-	abort_status = pmixp_abort_agent_stop();
 	pmixp_stepd_finalize();
 	_libpmix_close(libpmix_plug);
 	return SLURM_SUCCESS;
@@ -160,11 +157,6 @@ extern int p_mpi_hook_slurmstepd_prefork(
 
 	if (SLURM_SUCCESS != (ret = pmixp_stepd_init(job, env))) {
 		PMIXP_ERROR("pmixp_stepd_init() failed");
-		goto err_ext;
-	}
-
-	if (SLURM_SUCCESS != (ret = pmixp_abort_agent_start(env))) {
-		PMIXP_ERROR("pmixp_abort_agent_start() failed");
 		goto err_ext;
 	}
 
@@ -217,6 +209,12 @@ extern mpi_plugin_client_state_t *p_mpi_hook_client_prelaunch(
 	static bool setup_done = false;
 	uint32_t nnodes, ntasks, **tids;
 	uint16_t *task_cnt;
+	int ret;
+
+	if (SLURM_SUCCESS != (ret = pmixp_abort_agent_start(env))) {
+		PMIXP_ERROR("pmixp_abort_agent_start() failed");
+		return NULL;
+	}
 
 	PMIXP_DEBUG("setup process mapping in srun");
 	if ((job->het_job_id == NO_VAL) || (job->het_job_task_offset == 0)) {
@@ -249,7 +247,8 @@ extern mpi_plugin_client_state_t *p_mpi_hook_client_prelaunch(
 
 extern int p_mpi_hook_client_fini(void)
 {
-	PMIXP_DEBUG("Status code for fini: %d", abort_status);
+    int abort_status = pmixp_abort_agent_stop();
+    PMIXP_DEBUG("Status code for fini: %d", abort_status);
 
 	return abort_status;
 }
