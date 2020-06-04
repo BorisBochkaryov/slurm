@@ -78,7 +78,6 @@ static struct io_operations to_ops = {
 	.handle_read = &_timer_conn_read
 };
 
-int abort_status_local = -1;
 
 static bool _conn_readable(eio_obj_t *obj)
 {
@@ -314,7 +313,7 @@ static void *_pmix_abort_thread(void *args)
 		PMIXP_DEBUG("New abort client: %s:%d", inet_ntoa(abort_client.sin_addr), abort_client.sin_port);
 
 		slurm_read_stream(abort_client_sock, &status_code, sizeof(status_code));
-		abort_status_local = atoi(status_code);
+		pmixp_info_set_abort_status(atoi(status_code));
 
 		close(abort_client_sock);
 	}
@@ -349,7 +348,7 @@ int pmixp_abort_agent_stop(void)
 {
 	pthread_kill(_abort_tid, SIGKILL);
 
-	return abort_status_local;
+	return pmixp_info_abort_status();
 }
 
 int pmixp_agent_start(void)

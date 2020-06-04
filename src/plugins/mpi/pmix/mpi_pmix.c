@@ -88,7 +88,6 @@ const char plugin_type[] = "mpi/pmix_v3";
 const uint32_t plugin_version = SLURM_VERSION_NUMBER;
 
 void *libpmix_plug = NULL;
-
 static void _libpmix_close(void *lib_plug)
 {
 	xassert(lib_plug);
@@ -247,8 +246,6 @@ extern mpi_plugin_client_state_t *p_mpi_hook_client_prelaunch(
 
 extern int p_mpi_hook_client_fini(void)
 {
-    int abort_status = pmixp_abort_agent_stop();
-    PMIXP_DEBUG("Status code for fini: %d", abort_status);
-
-	return abort_status;
+	pmixp_abort_agent_stop();
+	return pmixp_info_abort_status();
 }
