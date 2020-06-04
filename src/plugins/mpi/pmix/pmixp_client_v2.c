@@ -100,9 +100,7 @@ static pmix_status_t _abort_fn(const pmix_proc_t *proc, void *server_object,
 		return SLURM_ERROR;
 	}
 
-	char buf[12];
-	snprintf(buf, sizeof(buf), "%d", status);
-	slurm_write_stream(client_sock, buf, sizeof(buf));
+	slurm_write_stream(client_sock, &status, sizeof(status));
 	close(client_sock);
 
 	slurm_kill_job_step(pmixp_info_jobid(), pmixp_info_stepid(), SIGKILL);

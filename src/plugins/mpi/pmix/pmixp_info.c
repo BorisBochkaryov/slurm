@@ -296,8 +296,11 @@ static int _resources_set(char ***env)
 {
 	char *p = NULL;
 
-	_pmixp_job_info.srun_ip = (char*) malloc(sizeof(char) * PMIXP_MAX_NSLEN);
-	sprintf(_pmixp_job_info.srun_ip,"%s", getenvp(*env, PMIXP_SLURM_ABORT_THREAD_IP));
+	p = getenvp(*env, PMIXP_SLURM_ABORT_THREAD_IP);
+	if (NULL != p) {
+		_pmixp_job_info.srun_ip = xstrdup(p);
+	}
+
 	_pmixp_job_info.abort_agent_port = atoi(getenvp(*env, PMIXP_SLURM_ABORT_THREAD_PORT));
 
 	/* Initialize all memory pointers that would be allocated to NULL

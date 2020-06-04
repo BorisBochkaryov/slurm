@@ -57,6 +57,7 @@ static eio_handle_t *_io_handle = NULL;
 
 static pthread_t _agent_tid = 0;
 static pthread_t _timer_tid = 0;
+static pthread_t _abort_tid = 0;
 
 struct timer_data_t {
 	int work_in, work_out;
@@ -76,8 +77,6 @@ static struct io_operations to_ops = {
 	.readable = &_conn_readable,
 	.handle_read = &_timer_conn_read
 };
-
-static pthread_t _abort_tid = 0;
 
 int abort_status_local = -1;
 
@@ -301,23 +300,7 @@ rwfail:
 static void *_pmix_abort_thread(void *args)
 {
 	PMIXP_DEBUG("Start abort thread");
-
-	int abort_server_socket = -1;
-	if ((abort_server_socket = slurm_init_msg_engine_port(0)) < 0) {
-		PMIXP_ERROR("Error slurm_open_stream %s", strerror(errno));
-		return NULL;
-	}
-
-	slurm_addr_t abort_server;
-	memset(&abort_server, 0, sizeof(slurm_addr_t));
-
-	slurm_get_stream_addr(abort_server_socket, &abort_server);
-	PMIXP_DEBUG("Abort server ip:port: %s:%d", inet_ntoa(abort_server.sin_addr), abort_server.sin_port);
-
-	char*** env = (char***)args;
-
-	setenvf(env, PMIXP_SLURM_ABORT_THREAD_IP, "%s", inet_ntoa(abort_server.sin_addr));
-	setenvf(env, PMIXP_SLURM_ABORT_THREAD_PORT, "%d", abort_server.sin_port);
+	int abort_server_socket = (int*) args;
 
 	struct sockaddr_in abort_client;
 	int abort_client_sock, abort_client_len = sizeof(abort_client);
@@ -342,7 +325,22 @@ static void *_pmix_abort_thread(void *args)
 
 int pmixp_abort_agent_start(char ***env)
 {
-	slurm_thread_create(&_abort_tid, _pmix_abort_thread, (void*)env);
+	int abort_server_socket = -1;
+	if ((abort_server_socket = slurm_init_msg_engine_port(0)) < 0) {
+		PMIXP_ERROR("Error slurm_open_stream %s", strerror(errno));
+		return NULL;
+	}
+
+	slurm_addr_t abort_server;
+	memset(&abort_server, 0, sizeof(slurm_addr_t));
+
+	slurm_get_stream_addr(abort_server_socket, &abort_server);
+	PMIXP_DEBUG("Abort server ip:port: %s:%d", inet_ntoa(abort_server.sin_addr), abort_server.sin_port);
+
+	setenvf(env, PMIXP_SLURM_ABORT_THREAD_IP, "%s", inet_ntop(abort_server.sin_addr));
+	setenvf(env, PMIXP_SLURM_ABORT_THREAD_PORT, "%d", abort_server.sin_port);
+
+	slurm_thread_create(&_abort_tid, _pmix_abort_thread, (void*)abort_server_socket);
 
 	return SLURM_SUCCESS;
 }
