@@ -88,6 +88,7 @@ const char plugin_type[] = "mpi/pmix_v3";
 const uint32_t plugin_version = SLURM_VERSION_NUMBER;
 
 void *libpmix_plug = NULL;
+
 static void _libpmix_close(void *lib_plug)
 {
 	xassert(lib_plug);
@@ -158,7 +159,6 @@ extern int p_mpi_hook_slurmstepd_prefork(
 		PMIXP_ERROR("pmixp_stepd_init() failed");
 		goto err_ext;
 	}
-
 	if (SLURM_SUCCESS != (ret = pmixp_agent_start())) {
 		PMIXP_ERROR("pmixp_agent_start() failed");
 		goto err_ext;
