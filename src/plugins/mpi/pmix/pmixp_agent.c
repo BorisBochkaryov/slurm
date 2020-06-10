@@ -54,6 +54,7 @@ static pthread_mutex_t agent_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t agent_running_cond = PTHREAD_COND_INITIALIZER;
 
 static eio_handle_t *_io_handle = NULL;
+struct pollfd abort_fds[2];
 
 static pthread_t _agent_tid = 0;
 static pthread_t _timer_tid = 0;
@@ -305,17 +306,31 @@ static void *_pmix_abort_thread(void *args)
 	int abort_client_sock, abort_client_len = sizeof(abort_client);
 	char status_code[5], return_code[5];
 
+	abort_fds[1].fd = abort_server_socket;
+	abort_fds[1].events = POLLIN;
+
 	while (1) {
-		if ((abort_client_sock = slurm_accept_msg_conn(abort_server_socket, &abort_client)) < 0) {
-			PMIXP_ERROR("Error accept %s", strerror(errno));
+		if (poll(abort_fds, 2, -1) == -1){
+			PMIXP_ERROR("Error poll()");
 			return NULL;
 		}
-		PMIXP_DEBUG("New abort client: %s:%d", inet_ntoa(abort_client.sin_addr), abort_client.sin_port);
 
-		slurm_read_stream(abort_client_sock, &status_code, sizeof(status_code));
-		pmixp_info_set_abort_status(atoi(status_code));
+		if (abort_fds[0].revents & POLLIN){
+			break;
+		}
 
-		close(abort_client_sock);
+		if (abort_fds[1].revents & POLLIN) {
+			if ((abort_client_sock = slurm_accept_msg_conn(abort_server_socket, &abort_client)) < 0) {
+				PMIXP_ERROR("Error accept %s", strerror(errno));
+				return NULL;
+			}
+			PMIXP_DEBUG("New abort client: %s:%d", inet_ntoa(abort_client.sin_addr), abort_client.sin_port);
+
+			slurm_read_stream(abort_client_sock, &status_code, sizeof(status_code));
+			pmixp_info_set_abort_status(atoi(status_code));
+
+			close(abort_client_sock);
+		}
 	}
 
 	close(abort_server_socket);
@@ -324,6 +339,14 @@ static void *_pmix_abort_thread(void *args)
 
 int pmixp_abort_agent_start(char ***env)
 {
+	int fds[2];
+	if (pipe(fds)) {
+		return SLURM_ERROR;
+	}
+
+	abort_fds[0].fd = fds[0];
+	abort_fds[0].events = POLLIN;
+
 	int abort_server_socket = -1;
 	if ((abort_server_socket = slurm_init_msg_engine_port(0)) < 0) {
 		PMIXP_ERROR("Error slurm_open_stream %s", strerror(errno));
@@ -349,7 +372,13 @@ int pmixp_abort_agent_start(char ***env)
 
 int pmixp_abort_agent_stop(void)
 {
-	pthread_kill(_abort_tid, SIGKILL);
+	char c = 1;
+	if (_abort_tid) {
+		write(abort_fds[0].fd, &c, 1);
+
+		pthread_join(_abort_tid, NULL);
+		_abort_tid = 0;
+	}
 
 	return pmixp_info_abort_status();
 }
