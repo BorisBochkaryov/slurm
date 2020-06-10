@@ -301,7 +301,7 @@ static int _resources_set(char ***env)
 		_pmixp_job_info.srun_ip = xstrdup(p);
 	}
 
-	p = atoi(getenvp(*env, PMIXP_SLURM_ABORT_THREAD_PORT));
+	p = getenvp(*env, PMIXP_SLURM_ABORT_THREAD_PORT);
 	if (NULL != p) {
 		_pmixp_job_info.abort_agent_port = atoi(xstrdup(p));
 	}
