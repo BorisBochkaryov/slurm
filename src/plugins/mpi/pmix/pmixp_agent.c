@@ -336,7 +336,10 @@ int pmixp_abort_agent_start(char ***env)
 	slurm_get_stream_addr(abort_server_socket, &abort_server);
 	PMIXP_DEBUG("Abort server ip:port: %s:%d", inet_ntoa(abort_server.sin_addr), abort_server.sin_port);
 
-	setenvf(env, PMIXP_SLURM_ABORT_THREAD_IP, "%s", inet_ntop(abort_server.sin_addr));
+	char ip_buffer[INET_ADDRSTRLEN];
+	inet_ntop(AF_INET, &abort_server.sin_addr, ip_buffer, sizeof(ip_buffer));
+
+	setenvf(env, PMIXP_SLURM_ABORT_THREAD_IP, "%s", ip_buffer);
 	setenvf(env, PMIXP_SLURM_ABORT_THREAD_PORT, "%d", abort_server.sin_port);
 
 	slurm_thread_create(&_abort_tid, _pmix_abort_thread, (void*)abort_server_socket);
