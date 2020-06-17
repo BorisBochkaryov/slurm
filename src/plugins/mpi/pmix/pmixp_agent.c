@@ -55,7 +55,7 @@ static pthread_cond_t agent_running_cond = PTHREAD_COND_INITIALIZER;
 
 static eio_handle_t *_io_handle = NULL;
 static eio_handle_t *_abort_handle = NULL;
-struct pollfd abort_fds[2];
+char ip_buffer[INET_ADDRSTRLEN];
 
 static pthread_t _agent_tid = 0;
 static pthread_t _timer_tid = 0;
@@ -84,7 +84,6 @@ static struct io_operations to_ops = {
 	.readable = &_conn_readable,
 	.handle_read = &_timer_conn_read
 };
-
 
 static bool _conn_readable(eio_obj_t *obj)
 {
@@ -154,8 +153,9 @@ static int _server_conn_read(eio_obj_t *obj, List objs)
 static int _abort_conn_read(eio_obj_t *obj, List objs)
 {
 	struct sockaddr_in abort_client;
-	int abort_client_sock, abort_client_len = sizeof(abort_client);
-	char status_code[5], return_code[5];
+	int abort_client_sock;
+	uint32_t abort_client_len = sizeof(abort_client);
+	uint32_t ret_status;
 
 	int fd;
 	struct sockaddr addr;
@@ -178,8 +178,9 @@ static int _abort_conn_read(eio_obj_t *obj, List objs)
 		}
 		PMIXP_DEBUG("New abort client: %s:%d", inet_ntoa(abort_client.sin_addr), abort_client.sin_port);
 
-		slurm_read_stream(abort_client_sock, &status_code, sizeof(status_code));
-		pmixp_info_set_abort_status(atoi(status_code));
+		slurm_read_stream(abort_client_sock, &ret_status, sizeof(ret_status));
+		if (SLURM_SUCCESS == pmixp_info_get_abort_status())
+			pmixp_info_set_abort_status((int)ntohl(ret_status));
 
 		close(abort_client_sock);
 	}
@@ -359,7 +360,7 @@ int pmixp_abort_agent_start(char ***env)
 	int abort_server_socket = -1;
 	if ((abort_server_socket = slurm_init_msg_engine_port(0)) < 0) {
 		PMIXP_ERROR("Error slurm_open_stream %s", strerror(errno));
-		return NULL;
+		return SLURM_COMMUNICATIONS_CONNECTION_ERROR;
 	}
 
 	slurm_addr_t abort_server;
@@ -368,7 +369,6 @@ int pmixp_abort_agent_start(char ***env)
 	slurm_get_stream_addr(abort_server_socket, &abort_server);
 	PMIXP_DEBUG("Abort server ip:port: %s:%d", inet_ntoa(abort_server.sin_addr), abort_server.sin_port);
 
-	char ip_buffer[INET_ADDRSTRLEN];
 	inet_ntop(AF_INET, &abort_server.sin_addr, ip_buffer, sizeof(ip_buffer));
 
 	setenvf(env, PMIXP_SLURM_ABORT_THREAD_IP, "%s", ip_buffer);

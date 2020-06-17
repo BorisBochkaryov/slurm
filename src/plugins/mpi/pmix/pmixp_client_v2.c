@@ -89,6 +89,8 @@ static pmix_status_t _abort_fn(const pmix_proc_t *proc, void *server_object,
 	/* Just kill this stepid for now. Think what we can do for FT here? */
 	PMIXP_DEBUG("called: status = %d, msg = %s", status, msg);
 
+	uint32_t status_net = htonl((uint32_t)status);
+
 	slurm_addr_t abort_server;
 	abort_server.sin_family = AF_INET;
 	abort_server.sin_port = pmixp_info_abort_agent_port();
@@ -100,7 +102,7 @@ static pmix_status_t _abort_fn(const pmix_proc_t *proc, void *server_object,
 		return SLURM_ERROR;
 	}
 
-	slurm_write_stream(client_sock, &status, sizeof(status));
+	slurm_write_stream(client_sock, &status_net, sizeof(status_net));
 	close(client_sock);
 
 	slurm_kill_job_step(pmixp_info_jobid(), pmixp_info_stepid(), SIGKILL);

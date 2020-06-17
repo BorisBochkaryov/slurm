@@ -211,7 +211,7 @@ extern mpi_plugin_client_state_t *p_mpi_hook_client_prelaunch(
 	int ret;
 
 	if (SLURM_SUCCESS != (ret = pmixp_abort_agent_start(env))) {
-		PMIXP_ERROR("pmixp_abort_agent_start() failed");
+		PMIXP_ERROR("pmixp_abort_agent_start() failed %d", ret);
 		return NULL;
 	}
 

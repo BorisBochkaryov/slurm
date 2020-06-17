@@ -299,11 +299,15 @@ static int _resources_set(char ***env)
 	p = getenvp(*env, PMIXP_SLURM_ABORT_THREAD_IP);
 	if (NULL != p) {
 		_pmixp_job_info.srun_ip = xstrdup(p);
+	} else {
+		_pmixp_job_info.srun_ip = NULL;
 	}
 
 	p = getenvp(*env, PMIXP_SLURM_ABORT_THREAD_PORT);
 	if (NULL != p) {
 		_pmixp_job_info.abort_agent_port = atoi(xstrdup(p));
+	} else {
+		_pmixp_job_info.abort_agent_port = -1;
 	}
 
 	/* Initialize all memory pointers that would be allocated to NULL
