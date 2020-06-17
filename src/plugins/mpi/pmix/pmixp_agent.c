@@ -54,6 +54,7 @@ static pthread_mutex_t agent_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t agent_running_cond = PTHREAD_COND_INITIALIZER;
 
 static eio_handle_t *_io_handle = NULL;
+static eio_handle_t *_abort_handle = NULL;
 struct pollfd abort_fds[2];
 
 static pthread_t _agent_tid = 0;
@@ -69,6 +70,11 @@ static struct timer_data_t timer_data;
 static bool _conn_readable(eio_obj_t *obj);
 static int _server_conn_read(eio_obj_t *obj, List objs);
 static int _timer_conn_read(eio_obj_t *obj, List objs);
+static struct io_operations abort_ops = {
+	.readable = &_conn_readable,
+	.handle_read = &_abort_conn_read
+};
+
 static struct io_operations srv_ops = {
 	.readable = &_conn_readable,
 	.handle_read = &_server_conn_read
@@ -141,6 +147,41 @@ static int _server_conn_read(eio_obj_t *obj, List objs)
 			/* Unexpected trigger */
 			close(fd);
 		}
+	}
+	return 0;
+}
+
+static int _abort_conn_read(eio_obj_t *obj, List objs)
+{
+	struct sockaddr_in abort_client;
+	int abort_client_sock, abort_client_len = sizeof(abort_client);
+	char status_code[5], return_code[5];
+
+	int fd;
+	struct sockaddr addr;
+	socklen_t size = sizeof(addr);
+	int shutdown = 0;
+
+	while (1) {
+		if (!pmixp_fd_read_ready(obj->fd, &shutdown)) {
+			if (shutdown) {
+				obj->shutdown = true;
+				if (shutdown < 0)
+					PMIXP_ERROR_NO(shutdown, "sd=%d failure", obj->fd);
+			}
+			return 0;
+		}
+
+		if ((abort_client_sock = slurm_accept_msg_conn(obj->fd, &abort_client)) < 0) {
+			PMIXP_ERROR("Error accept %s", strerror(errno));
+			return NULL;
+		}
+		PMIXP_DEBUG("New abort client: %s:%d", inet_ntoa(abort_client.sin_addr), abort_client.sin_port);
+
+		slurm_read_stream(abort_client_sock, &status_code, sizeof(status_code));
+		pmixp_info_set_abort_status(atoi(status_code));
+
+		close(abort_client_sock);
 	}
 	return 0;
 }
@@ -302,51 +343,19 @@ static void *_pmix_abort_thread(void *args)
 	PMIXP_DEBUG("Start abort thread");
 	int abort_server_socket = (int*) args;
 
-	struct sockaddr_in abort_client;
-	int abort_client_sock, abort_client_len = sizeof(abort_client);
-	char status_code[5], return_code[5];
+	eio_obj_t *obj;
+	_abort_handle = eio_handle_create(0);
+	obj = eio_obj_create(abort_server_socket, &abort_ops, (void *)(-1));
+	eio_new_initial_obj(_abort_handle, obj);
 
-	abort_fds[1].fd = abort_server_socket;
-	abort_fds[1].events = POLLIN;
+	eio_handle_mainloop(_abort_handle);
 
-	while (1) {
-		if (poll(abort_fds, 2, -1) == -1){
-			PMIXP_ERROR("Error poll()");
-			return NULL;
-		}
-
-		if (abort_fds[0].revents & POLLIN){
-			break;
-		}
-
-		if (abort_fds[1].revents & POLLIN) {
-			if ((abort_client_sock = slurm_accept_msg_conn(abort_server_socket, &abort_client)) < 0) {
-				PMIXP_ERROR("Error accept %s", strerror(errno));
-				return NULL;
-			}
-			PMIXP_DEBUG("New abort client: %s:%d", inet_ntoa(abort_client.sin_addr), abort_client.sin_port);
-
-			slurm_read_stream(abort_client_sock, &status_code, sizeof(status_code));
-			pmixp_info_set_abort_status(atoi(status_code));
-
-			close(abort_client_sock);
-		}
-	}
-
-	close(abort_server_socket);
-	return NULL;
+	PMIXP_DEBUG("Abort thread exit");
+	eio_handle_destroy(_abort_handle);
 }
 
 int pmixp_abort_agent_start(char ***env)
 {
-	int fds[2];
-	if (pipe(fds)) {
-		return SLURM_ERROR;
-	}
-
-	abort_fds[0].fd = fds[0];
-	abort_fds[0].events = POLLIN;
-
 	int abort_server_socket = -1;
 	if ((abort_server_socket = slurm_init_msg_engine_port(0)) < 0) {
 		PMIXP_ERROR("Error slurm_open_stream %s", strerror(errno));
@@ -374,7 +383,7 @@ int pmixp_abort_agent_stop(void)
 {
 	char c = 1;
 	if (_abort_tid) {
-		write(abort_fds[0].fd, &c, 1);
+		eio_signal_shutdown(_abort_handler);
 
 		pthread_join(_abort_tid, NULL);
 		_abort_tid = 0;
