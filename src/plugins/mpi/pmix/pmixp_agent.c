@@ -170,22 +170,28 @@ static int _abort_conn_read(eio_obj_t *obj, List objs)
 				if (shutdown < 0)
 					PMIXP_ERROR_NO(shutdown, "sd=%d failure", obj->fd);
 			}
-			return 0;
+			return SLURM_SUCCESS;
 		}
 
 		if ((abort_client_sock = slurm_accept_msg_conn(obj->fd, &abort_client)) < 0) {
 			PMIXP_ERROR("Error accept %s", strerror(errno));
-			return NULL;
+			return SLURM_ERROR;
 		}
 		PMIXP_DEBUG("New abort client: %s:%d", inet_ntoa(abort_client.sin_addr), abort_client.sin_port);
 
-		slurm_read_stream(abort_client_sock, &ret_status, sizeof(ret_status));
+		int len;
+		if ((len = slurm_read_stream(abort_client_sock, &ret_status, sizeof(ret_status))) == -1)
+			return SLURM_ERROR;
+
+		if ((len = slurm_write_stream(abort_client_sock, &ret_status, sizeof(ret_status))) == -1)
+			return SLURM_ERROR;
+
 		if (SLURM_SUCCESS == pmixp_info_abort_status())
 			pmixp_info_set_abort_status((int)ntohl(ret_status));
 
 		close(abort_client_sock);
 	}
-	return 0;
+	return SLURM_SUCCESS;
 }
 
 static int _timer_conn_read(eio_obj_t *obj, List objs)

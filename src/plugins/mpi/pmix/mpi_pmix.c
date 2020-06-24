@@ -246,6 +246,5 @@ extern mpi_plugin_client_state_t *p_mpi_hook_client_prelaunch(
 
 extern int p_mpi_hook_client_fini(void)
 {
-	pmixp_abort_agent_stop();
-	return pmixp_info_abort_status();
+	return pmixp_abort_agent_stop();
 }
