@@ -296,14 +296,14 @@ static int _resources_set(char ***env)
 {
 	char *p = NULL;
 
-	p = getenvp(*env, PMIXP_SLURM_ABORT_THREAD_IP);
+	p = getenvp(*env, PMIXP_SLURM_ABORT_AGENT_IP);
 	if (NULL != p) {
 		_pmixp_job_info.srun_ip = xstrdup(p);
 	} else {
 		_pmixp_job_info.srun_ip = NULL;
 	}
 
-	p = getenvp(*env, PMIXP_SLURM_ABORT_THREAD_PORT);
+	p = getenvp(*env, PMIXP_SLURM_ABORT_AGENT_PORT);
 	if (NULL != p) {
 		_pmixp_job_info.abort_agent_port = atoi(xstrdup(p));
 	} else {
