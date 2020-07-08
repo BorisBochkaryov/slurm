@@ -90,7 +90,6 @@ static pmix_status_t _abort_fn(const pmix_proc_t *proc, void *server_object,
 	PMIXP_DEBUG("called: status = %d, msg = %s", status, msg);
 
 	uint32_t status_net = htonl((uint32_t)status);
-	uint32_t ret_status;
 
 	slurm_addr_t abort_server;
 	abort_server.sin_family = AF_INET;
@@ -107,7 +106,7 @@ static pmix_status_t _abort_fn(const pmix_proc_t *proc, void *server_object,
 	if ((len = slurm_write_stream(client_sock, &status_net, sizeof(status_net))) == -1)
 		return SLURM_ERROR;
 
-	if ((len = slurm_read_stream(client_sock, &ret_status, sizeof(ret_status))) == -1)
+	if ((len = slurm_read_stream(client_sock, &status_net, sizeof(status_net))) == -1)
 		return SLURM_ERROR;
 
 	close(client_sock);
