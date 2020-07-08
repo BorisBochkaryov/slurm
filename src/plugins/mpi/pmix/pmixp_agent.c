@@ -384,6 +384,8 @@ int pmixp_abort_agent_start(char ***env)
 
 int pmixp_abort_agent_stop(void)
 {
+	eio_handle_destroy(_abort_handle);
+
 	char c = 1;
 	if (_abort_tid) {
 		eio_signal_shutdown(_abort_handle);
