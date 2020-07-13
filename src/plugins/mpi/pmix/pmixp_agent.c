@@ -71,6 +71,7 @@ static bool _conn_readable(eio_obj_t *obj);
 static int _server_conn_read(eio_obj_t *obj, List objs);
 static int _timer_conn_read(eio_obj_t *obj, List objs);
 static int _abort_conn_read(eio_obj_t *obj, List objs);
+
 static struct io_operations abort_ops = {
 	.readable = &_conn_readable,
 	.handle_read = &_abort_conn_read
@@ -155,13 +156,10 @@ static int _abort_conn_read(eio_obj_t *obj, List objs)
 {
 	struct sockaddr_in abort_client;
 	int abort_client_sock;
-	uint32_t abort_client_len = sizeof(abort_client);
-	uint32_t ret_status;
-
-	int fd;
+	char ret_status[32];
 	struct sockaddr addr;
-	socklen_t size = sizeof(addr);
 	int shutdown = 0;
+	int len;
 
 	while (1) {
 		if (!pmixp_fd_read_ready(obj->fd, &shutdown)) {
@@ -174,12 +172,11 @@ static int _abort_conn_read(eio_obj_t *obj, List objs)
 		}
 
 		if ((abort_client_sock = slurm_accept_msg_conn(obj->fd, &abort_client)) < 0) {
-			PMIXP_ERROR("Error accept %s", strerror(errno));
+			PMIXP_ERROR("Error accept %m");
 			return SLURM_ERROR;
 		}
 		PMIXP_DEBUG("New abort client: %s:%d", inet_ntoa(abort_client.sin_addr), abort_client.sin_port);
 
-		int len;
 		if ((len = slurm_read_stream(abort_client_sock, &ret_status, sizeof(ret_status))) == -1)
 			return SLURM_ERROR;
 
@@ -187,7 +184,7 @@ static int _abort_conn_read(eio_obj_t *obj, List objs)
 			return SLURM_ERROR;
 
 		if (SLURM_SUCCESS == pmixp_info_abort_status())
-			pmixp_info_set_abort_status((int)ntohl(ret_status));
+			pmixp_info_set_abort_status((int)ntohl(atoi(ret_status)));
 
 		close(abort_client_sock);
 	}
@@ -351,41 +348,44 @@ static void *_pmix_abort_thread(void *args)
 	PMIXP_DEBUG("Start abort thread");
 	eio_handle_mainloop(_abort_handle);
 	PMIXP_DEBUG("Abort thread exit");
+	return NULL;
 }
 
 int pmixp_abort_agent_start(char ***env)
 {
 	int abort_server_socket = -1;
+	slurm_addr_t abort_server;
+	char ip_buffer[INET_ADDRSTRLEN];
+	eio_obj_t *obj;
+
 	if ((abort_server_socket = slurm_init_msg_engine_port(0)) < 0) {
-		PMIXP_ERROR("Error slurm_open_stream %s", strerror(errno));
+		PMIXP_ERROR("Error slurm_open_stream %m");
 		return SLURM_COMMUNICATIONS_CONNECTION_ERROR;
 	}
 
-	slurm_addr_t abort_server;
 	memset(&abort_server, 0, sizeof(slurm_addr_t));
 
-	slurm_get_stream_addr(abort_server_socket, &abort_server);
+	if (slurm_get_stream_addr(abort_server_socket, &abort_server) < 0) {
+		PMIXP_ERROR("Error slurm_get_stream_addr %m");
+	}
 	PMIXP_DEBUG("Abort server ip:port: %s:%d", inet_ntoa(abort_server.sin_addr), abort_server.sin_port);
 
-	char ip_buffer[INET_ADDRSTRLEN];
 	inet_ntop(AF_INET, &abort_server.sin_addr, ip_buffer, sizeof(ip_buffer)); // TODO: check error return
 
 	setenvf(env, PMIXP_SLURM_ABORT_AGENT_IP, "%s", ip_buffer);
 	setenvf(env, PMIXP_SLURM_ABORT_AGENT_PORT, "%d", abort_server.sin_port);
 
-	eio_obj_t *obj;
 	_abort_handle = eio_handle_create(0);
 	obj = eio_obj_create(abort_server_socket, &abort_ops, (void *)(-1));
 	eio_new_initial_obj(_abort_handle, obj);
 
-	slurm_thread_create(&_abort_tid, _pmix_abort_thread, (void*)abort_server_socket);
+	slurm_thread_create(&_abort_tid, _pmix_abort_thread, NULL);
 
 	return SLURM_SUCCESS;
 }
 
 int pmixp_abort_agent_stop(void)
 {
-	char c = 1;
 	if (_abort_tid) {
 		eio_signal_shutdown(_abort_handle);
 

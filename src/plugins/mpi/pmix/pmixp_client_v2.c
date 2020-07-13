@@ -99,7 +99,7 @@ static pmix_status_t _abort_fn(const pmix_proc_t *proc, void *server_object,
 
 	int client_sock;
 	if((client_sock = slurm_open_msg_conn(&abort_server)) < 0){
-		PMIXP_ERROR("Error create and conn client socket: %s", strerror(errno));
+		PMIXP_ERROR("Error create and conn client socket: %m");
 		return SLURM_ERROR;
 	}
 
