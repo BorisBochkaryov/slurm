@@ -4,7 +4,8 @@
  *  Copyright (C) 2014-2015 Artem Polyakov. All rights reserved.
  *  Copyright (C) 2015-2018 Mellanox Technologies. All rights reserved.
  *  Written by Artem Polyakov <artpol84@gmail.com, artemp@mellanox.com>,
- *             Boris Karasev <karasev.b@gmail.com, boriska@mellanox.com>.
+ *             Boris Karasev <karasev.b@gmail.com, boriska@mellanox.com>,
+ *             Boris Bochkarev <boris-bochkaryov@yandex.ru>.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
