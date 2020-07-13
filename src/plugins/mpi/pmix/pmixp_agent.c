@@ -184,7 +184,7 @@ static int _abort_conn_read(eio_obj_t *obj, List objs)
 			return SLURM_ERROR;
 
 		if (SLURM_SUCCESS == pmixp_info_abort_status())
-			pmixp_info_set_abort_status((int)ntohl(ret_status));
+			pmixp_info_set_abort_status((int)ntohl(atoi(ret_status)));
 
 		close(abort_client_sock);
 	}
