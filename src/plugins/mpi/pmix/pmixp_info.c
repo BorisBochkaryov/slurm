@@ -3,7 +3,8 @@
  *****************************************************************************
  *  Copyright (C) 2014-2015 Artem Polyakov. All rights reserved.
  *  Copyright (C) 2015-2017 Mellanox Technologies. All rights reserved.
- *  Written by Artem Polyakov <artpol84@gmail.com, artemp@mellanox.com>.
+ *  Written by Artem Polyakov <artpol84@gmail.com, artemp@mellanox.com>,
+ *             Boris Bochkarev <boris-bochkaryov@yandex.ru>.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -295,6 +296,20 @@ eio_handle_t *pmixp_info_io(void)
 static int _resources_set(char ***env)
 {
 	char *p = NULL;
+
+	p = getenvp(*env, PMIXP_SLURM_ABORT_AGENT_IP);
+	if (NULL != p) {
+		_pmixp_job_info.srun_ip = xstrdup(p);
+	} else {
+		_pmixp_job_info.srun_ip = NULL;
+	}
+
+	p = getenvp(*env, PMIXP_SLURM_ABORT_AGENT_PORT);
+	if (NULL != p) {
+		_pmixp_job_info.abort_agent_port = atoi(xstrdup(p));
+	} else {
+		_pmixp_job_info.abort_agent_port = -1;
+	}
 
 	/* Initialize all memory pointers that would be allocated to NULL
 	 * So in case of error exit we will know what to xfree
